@@ -1,78 +1,218 @@
-\# DSRE: State-Aware GPU-Resident Semantic Video Transport Pipeline
+# DSRE: State-Aware GPU-Resident Semantic Video Transport Pipeline
 
+**DSRE (Dynamic Semantic Reconstruction Engine) Core V1.0** is an experimental, production-grade research platform focused on next-generation semantic video compression and transport pipelines for short-form and interactive video systems such as telepresence, livestreaming, gaming, and mobile-first media platforms.
 
+Unlike conventional DCT-based codecs (H.264/H.265/AV1) that continuously re-encode static spatial information, DSRE separates semantic foreground data from redundant background regions, estimates the theoretical entropy of the meaningful signal, and reconstructs frames through a GPU-resident tensor pipeline optimized for low synchronization overhead and high temporal coherence.
 
-\*\*DSRE (Dynamic Semantic Reconstruction Engine) Core V1.0\*\* is an experimental, production-grade research platform designed to revolutionize video compression and transport for semantic video streams (e.g., TikTok, Shorts, Telepresence, Game Streaming).
+---
 
+# 🚀 Key Architectural Features
 
+### • Tri-Band Entropy Modeling
 
-Instead of relying on traditional full-frame DCT-based codecs (like H.264/AV1) that repeatedly encode static backgrounds, DSRE isolates the semantic foreground, computes its theoretical Shannon Entropy, and reconstructs the video on the client side using a zero-copy, tensor-resident GPU pipeline.
+Performs real-time Shannon Entropy estimation on sparse semantic residuals only:
 
+* RGB residual stream
+* Alpha matte
+* Low-resolution confidence map
 
+This avoids repeatedly encoding static scene regions and enables semantic payload estimation at significantly lower theoretical bandwidth.
 
-\## 🚀 Key Architectural Breakthroughs
+---
 
+### • Low-Synchronization CUDA Pipeline
 
+The entire temporal analysis stack operates directly on VRAM-resident tensors:
 
-\* \*\*Tri-Band Entropy Coding:\*\* Computes real-time Shannon Entropy (Bits Per Pixel) and Payload (KB) exclusively on the sparse residual data (RGB, Alpha, Low-Res Confidence), bypassing background redundancy.
+* EMA smoothing
+* Scene-cut detection
+* Temporal variance analysis
+* Confidence propagation
 
-\* \*\*Low-Sync Hybrid CUDA Pipeline:\*\* CPU-GPU synchronization stalls (`.item()` bottlenecks) are eliminated. The entire Exponential Moving Average (EMA) and Scene Cut detection math runs natively on VRAM tensors.
+CPU ↔ GPU synchronization bottlenecks (`.item()` stalls) are intentionally minimized to preserve CUDA pipeline continuity.
 
-\* \*\*Motion-Compensated Metrics:\*\* Uses FFT (Fast Fourier Transform) Phase Correlation to physically align frames, isolating true AI-flicker from natural camera pans (Uncompensated Frame Difference Energy).
+---
 
-\* \*\*True Trimap Boundary PSNR:\*\* Employs Morphological Dilation (5x5 Gaussian) to evaluate reconstruction quality strictly on the transition boundaries (hair, motion blur, transparent edges).
+### • Motion-Compensated Temporal Metrics
 
-\* \*\*Edge-Preserving Adaptive Blender:\*\* Replaces lossy Average Pooling with a highly optimized Separable Gaussian Kernel ($O(2N)$) for isotropic gradient magnitude calculation.
+Implements FFT Phase Correlation to align sequential frames before difference analysis.
 
+This isolates:
 
+* genuine reconstruction instability,
+* AI flicker,
+* temporal artifacts,
 
-\## 🧠 Pipeline Overview
+from natural camera movement such as pans and handheld motion.
 
+---
 
+### • Boundary-Aware Reconstruction Metrics
 
-1\. \*\*RVM Integration:\*\* Inferences semantic matting (Robust Video Matting) with FP16 precision.
+Uses morphological dilation and trimap-based PSNR evaluation to measure quality specifically around:
 
-2\. \*\*Causal Ring Buffer:\*\* Maintains a temporal history of frame states with zero-allocation (pre-allocated `TensorPool`).
+* hair strands,
+* motion blur regions,
+* semi-transparent edges,
+* fine transition boundaries.
 
-3\. \*\*Temporal Confidence Engine:\*\* Calculates spatial and temporal variance on the GPU to generate a 1/4 resolution confidence map.
+---
 
-4\. \*\*Entropy Codec (Faz 5):\*\* Quantizes tensors to 8-bit space, extracts the Probability Density Function (PDF), and calculates the absolute physical byte size of the payload.
+### • Edge-Preserving Adaptive Blending
 
-5\. \*\*Adaptive Blender:\*\* Reconstructs the final frame using edge-aware alpha compositing.
+Replaces lossy average pooling approaches with an optimized separable Gaussian pipeline for isotropic edge-aware compositing and stable gradient preservation.
 
+---
 
+# 🧠 Pipeline Overview
 
-\## 📂 Project Structure
+## 1. Semantic Matting
+
+Integrates Robust Video Matting (RVM) inference using FP16 precision for efficient foreground extraction.
+
+## 2. Temporal Ring Buffer
+
+Maintains a zero-allocation temporal history using:
+
+* preallocated tensor pools,
+* causal frame buffering,
+* VRAM-conscious memory reuse.
+
+## 3. Temporal Confidence Engine
+
+Calculates spatial and temporal variance fully on the GPU to generate dynamic confidence maps at reduced resolution.
+
+## 4. Entropy Codec (Phase 5)
+
+Quantizes tensor data into 8-bit space and computes:
+
+* probability density functions (PDF),
+* Shannon entropy,
+* estimated physical payload size.
+
+## 5. Adaptive Reconstruction
+
+Performs edge-aware alpha compositing for final frame reconstruction.
+
+---
+
+# 📂 Project Structure
 
 ```text
-
 DSRE/
-
 ├── src/
-
 │   ├── core/
-
-│   │   ├── metrics\_engine.py          # Trimap PSNR, FFT Phase Correlation, Energy
-
-│   │   ├── temporal\_confidence.py     # GPU-resident temporal variance math
-
-│   │   └── temporal\_dependency\_buffer.py # Pre-allocated Tensor Pool \& Ring Buffer
-
+│   │   ├── metrics_engine.py
+│   │   ├── temporal_confidence.py
+│   │   └── temporal_dependency_buffer.py
+│   │
 │   ├── external/
-
-│   │   └── rvm\_wrapper.py             # RobustVideoMatting JIT Loader
-
+│   │   └── rvm_wrapper.py
+│   │
 │   ├── reconstruction/
-
-│   │   └── adaptive\_blender.py        # Separable Gaussian Edge-Aware Compositor
-
+│   │   └── adaptive_blender.py
+│   │
 │   ├── schemas/
-
-│   │   └── frame\_metadata.py          # Pydantic data schemas
-
+│   │   └── frame_metadata.py
+│   │
 │   └── transport/
+│       └── entropy_codec.py
+│
+└── main_runner.py
+```
 
-│       └── entropy\_codec.py           # Shannon Entropy \& Bitrate Modeler
+---
 
-└── main\_runner.py                     # Entry point \& Pinned Memory Async Exporter
+# ⚙️ Installation
 
+## Clone the repository
+
+```bash
+git clone https://github.com/yourusername/DSRE.git
+cd DSRE
+```
+
+## Install dependencies
+
+> A CUDA-capable GPU and compatible PyTorch build are recommended.
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+# ▶️ Usage
+
+Place a video file named `test.mp4` inside the project root directory and run:
+
+```bash
+python main_runner.py
+```
+
+> `test.mp4` is intentionally excluded from the repository due to GitHub file size limitations.
+> You may use any short video clip for testing, preferably containing a moving human subject.
+
+---
+
+# 📦 requirements.txt
+
+```txt
+torch>=2.0.0
+torchvision>=0.15.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+pydantic>=2.0.0
+```
+
+---
+
+# 🔬 Research Status
+
+DSRE Core V1.0 currently represents **Phase 5** of the broader DSRE research initiative.
+
+The project functions as:
+
+* a semantic transport architecture prototype,
+* a probabilistic payload modeler,
+* and a GPU pipeline optimization platform.
+
+The current implementation successfully models the physical and informational bounds of semantic transport systems, but does not yet implement:
+
+* CABAC,
+* rANS,
+* arithmetic entropy bitstream generation,
+* hardware decoder interoperability.
+
+---
+
+# 🧩 Engineering Focus
+
+The architecture is heavily optimized around:
+
+* PyTorch Tensor Fusion
+* VRAM allocation discipline
+* CUDA Graph compatibility
+* low-allocation temporal systems
+* asynchronous export pipelines
+
+---
+
+# 📜 License
+
+This repository is currently released for research and educational purposes.
+
+Future revisions may introduce:
+
+* experimental transport protocols,
+* real-time streaming integrations,
+* semantic caching systems,
+* mobile-oriented inference backends.
+
+---
+
+# 🏆 Project Vision
+
+DSRE explores the possibility of treating video not as a sequence of full images, but as a continuously evolving semantic state representation.
+
+The long-term objective is to investigate whether semantic transport pipelines can substantially reduce bandwidth requirements while preserving perceptual continuity in modern interactive media systems.
